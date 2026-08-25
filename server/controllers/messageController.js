@@ -1,6 +1,7 @@
 const Message = require('../models/message.js');
 const User = require('../models/user.js');
-
+const cloudinary = require('../lib/cloudinary.js');
+const { io, userSocketMap } = require("../server.js");
 const getUsersForSidebar = async (req, res) => {
   try {
     const currentUserId = req.user._id;
@@ -43,7 +44,7 @@ const getMessages = async (req, res) => {
       { senderId: selectedUserId, receiverId: myId, seen: false },
       { $set: { seen: true } }
     );
-
+            
     return res.json({ success: true, messages });
   } catch (error) {
     console.error('Error fetching messages:', error);
@@ -61,5 +62,31 @@ const markMessageAsSeen = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+const sendMessage = async (req, res) => {
+try{  const {text,image} = req.body;
+  const receiverId = req.params.id;
+  const senderId = req.user._id;
+  let imageUrl;
+  if(image){
+    const uploadResponse = await cloudinary.uploader.upload(image);
+    imageUrl = uploadResponse.secure_url;
+}
+const newMessage = await Message.create({
+  senderId,
+  receiverId,
+  text,
+  image: imageUrl,
+});
 
-module.exports = { getUsersForSidebar, getMessages, markMessageAsSeen };
+//emit the new message to the receiver socket
+const receiverSocketId = userSocketMap[receiverId];
+if(receiverId){
+  io.to(receiverSocketId).emit("newMessage",newMessage);
+}
+ res.json({ success: true, message: newMessage });
+}
+catch(error){
+  console.error('Error sending message:', error);
+  return res.status(500).json({ success: false, message: 'Internal server error' });
+}};
+module.exports = { getUsersForSidebar, getMessages, markMessageAsSeen, sendMessage };
